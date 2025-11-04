@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: rag-api
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn -k uvicorn.workers.UvicornWorker src.app.main:app --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: "AIzaSyDtoNMQE8YGyZG55U7a1E_-OL_LJ7Foscs"
+        sync: false         # set in the dashboard
+      - key: GEMINI_MODEL
+        value: "gemini-2.5-flash"   # or the model you discovered with list_models
+      - key: EMBEDDINGS_MODEL
+        value: "models/text-embedding-004"
+      - key: INDEX_FILE
+        value: ".miniindex.pkl"        # optional; your code uses this by default
+
+  - type: web
+    name: rag-ui
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "streamlit run streamlit_app/stream.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: API_URL
+        value: "https://rag-api.onrender.com/chat"  # <-- AFTER first deploy, replace with real API URL if different
+      - key: PYTHONPATH
+        value: "."

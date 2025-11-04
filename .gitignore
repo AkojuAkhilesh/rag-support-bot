@@ -1,0 +1,17 @@
+# secrets / local state
+.env
+.miniindex.pkl
+.chroma/
+data/history/
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+# editor / tooling
+.vscode/
+.streamlit/
+# OS
+.DS_Store
+Thumbs.db

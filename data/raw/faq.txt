@@ -1,0 +1,4 @@
+Refund Policy: Customers can request a refund within 30 days of purchase with a valid receipt.
+Password Reset: Users can reset their password by visiting the /reset link and confirming their email OTP.
+Shipping: Standard shipping takes 3-5 business days. Expedited options are available at checkout.
+Support Hours: Our support team is available Mon–Fri, 9am–6pm EST.
