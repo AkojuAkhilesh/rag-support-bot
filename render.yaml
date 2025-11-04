@@ -1,5 +1,4 @@
-previews:
-  generation: automatic
+
 
 services:
   # ----------------------- FastAPI backend -----------------------
