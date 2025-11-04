@@ -7,7 +7,7 @@ services:
     startCommand: "gunicorn -k uvicorn.workers.UvicornWorker src.app.main:app --bind 0.0.0.0:$PORT"
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.9"
       - key: "AIzaSyDtoNMQE8YGyZG55U7a1E_-OL_LJ7Foscs"
         sync: false         # set in the dashboard
       - key: GEMINI_MODEL
