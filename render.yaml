@@ -13,7 +13,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"          # full semver required
       - key: GOOGLE_API_KEY
-        sync: "AIzaSyDtoNMQE8YGyZG55U7a1E_-OL_LJ7Foscs"            # you'll paste the real key in the Render UI
+        value: "AIzaSyDtoNMQE8YGyZG55U7a1E_-OL_LJ7Foscs"           # you'll paste the real key in the Render UI
       - key: GEMINI_MODEL
         value: "gemini-2.5-flash"   # use a model you know your account supports
       - key: EMBEDDINGS_MODEL
