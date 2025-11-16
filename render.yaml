@@ -1,5 +1,3 @@
-
-
 services:
   # ----------------------- FastAPI backend -----------------------
   - type: web
@@ -31,6 +29,6 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
       - key: API_URL
-        value: ""                # leave blank now; set to https://<rag-api>/chat AFTER api is live
+        value: "https://<rag-api>.onrender.com/chat"                # leave blank now; set to https://<rag-api>/chat AFTER api is live
       - key: PYTHONPATH
         value: "."
