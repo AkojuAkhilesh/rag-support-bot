@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     TOP_K: int = 6
 
     # === Model Names ===
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_EMBED_MODEL: str = "text-embedding-004"
 
     # === Load from .env ===
