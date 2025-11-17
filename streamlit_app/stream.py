@@ -2,34 +2,49 @@
 from pathlib import Path
 import sys
 
-
-ROOT = Path(__file__).resolve().parents[1]  # -> C:\Users\dell\rag-support-bot
+ROOT = Path(__file__).resolve().parents[1]  # -> project root
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))  # so 'src' is importable
+
 from src.core.history import load_history, append_message, clear_history, export_path
+
 # streamlit_app.py
 import requests
 import streamlit as st
-from pathlib import Path
 import os
-API_URL = os.getenv("API_URL", "http://localhost:8000/chat")
+from typing import List
+import io
+from pypdf import PdfReader
+from src.core.vectordb import (
+    add_document_text, index_count, reset_index, index_summary
+)
 
-# API_URL = "http://localhost:8000/chat"  # FastAPI endpoint
+API_URL = os.getenv("API_URL", "http://localhost:8000/chat")  # FastAPI endpoint
 
-st.set_page_config(page_title="RAG Support Bot (Gemini)", page_icon="🤖", layout="centered")
+st.set_page_config(
+    page_title="RAG Support Bot (Gemini)",
+    page_icon="🤖",
+    layout="centered",
+)
 st.title("🤖 RAG Support Bot (Gemini)")
 st.caption("Ask questions about your ingested docs. (faq.txt for now)")
 
-# Small status line
+# ---------- Sidebar status / health ----------
 index_exists = Path(".miniindex.pkl").exists()
 st.sidebar.header("Status")
-st.sidebar.write("Index file:", "✅ found" if index_exists else "❌ missing (.miniindex.pkl)")
+st.sidebar.write("Index file (local UI container):",
+                 "✅ found" if index_exists else "❌ missing (.miniindex.pkl)")
 st.sidebar.write("API endpoint:", API_URL)
 
-# Chat history in session
-# if "messages" not in st.session_state:
-    # st.session_state.messages = []  # each item: {"role": "user"/"assistant", "content": "...", "citations": [...]}
-# Chat history in session (persisted)
+# Show API health
+health_url = API_URL.replace("/chat", "/health")
+try:
+    h = requests.get(health_url, timeout=10)
+    st.sidebar.success(f"API health OK: {h.status_code} {h.text}")
+except Exception as e:
+    st.sidebar.error(f"API health failed: {e}")
+
+# ---------- Chat history (persisted locally) ----------
 if "messages" not in st.session_state:
     stored = load_history()
     st.session_state.messages = [
@@ -44,9 +59,12 @@ for m in st.session_state.messages:
         if m.get("citations"):
             with st.expander("Sources"):
                 for c in m["citations"]:
-                    st.write(f"[{c['index']}] {c.get('source')}  \n`{c.get('path')}`  \n(score: {c.get('score')})")
+                    st.write(
+                        f"[{c['index']}] {c.get('source')}  \n"
+                        f"`{c.get('path')}`  \n(score: {c.get('score')})"
+                    )
 
-# Input box (sticky at bottom)
+# ---------- Chat input ----------
 prompt = st.chat_input("Type your question…")
 
 if prompt:
@@ -54,9 +72,7 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    # persist user message to disk
-    append_message("user", prompt)
-
+    append_message("user", prompt)  # persist user message
 
     # call the API
     with st.chat_message("assistant"):
@@ -78,34 +94,25 @@ if prompt:
             if citations:
                 with st.expander("Sources"):
                     for c in citations:
-                        st.write(f"[{c['index']}] {c.get('source')}  \n`{c.get('path')}`  \n(score: {c.get('score')})")
+                        st.write(
+                            f"[{c['index']}] {c.get('source')}  \n"
+                            f"`{c.get('path')}`  \n(score: {c.get('score')})"
+                        )
 
-            # persist assistant message
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": answer,
-                "citations": citations
-            }
-
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer, "citations": citations}
             )
             append_message("assistant", answer, citations)
 
-# Sidebar controls
-# st.sidebar.markdown("---")
-# if st.sidebar.button("Clear chat"):
-#     st.session_state.messages = []
-#     st.rerun()
-# Sidebar controls
+# ---------- Conversation history controls ----------
 st.sidebar.markdown("---")
 with st.sidebar.expander("Conversation history"):
-    # Download button
     try:
         with open(export_path(), "rb") as f:
             st.download_button("⬇️ Download history (.jsonl)", f, file_name="chat_history.jsonl")
     except Exception:
         st.caption("No history yet.")
 
-    # Clear history + chat (confirm)
     confirm = st.checkbox("I understand this will erase the conversation")
     if st.button("Clear chat & history", disabled=not confirm):
         st.session_state.messages = []
@@ -113,78 +120,24 @@ with st.sidebar.expander("Conversation history"):
         st.sidebar.warning("History cleared.")
         st.rerun()
 
-# import io
-# from pypdf import PdfReader
-# from src.core.vectordb import add_texts, index_count, reset_index
-# from src.core.chunking import simple_chunk
-
-# st.sidebar.markdown("### Upload & Ingest")
-# uploaded = st.sidebar.file_uploader(
-#     "Drop a .txt or .pdf file to add to the knowledge base",
-#     type=["txt", "pdf"],
-#     accept_multiple_files=False
-# )
-
-# if uploaded:
-#     try:
-#         if uploaded.type == "text/plain" or uploaded.name.lower().endswith(".txt"):
-#             text = uploaded.read().decode("utf-8", errors="ignore")
-#         else:
-#             # PDF: extract text from all pages
-#             pdf = PdfReader(io.BytesIO(uploaded.read()))
-#             pages = []
-#             for p in pdf.pages:
-#                 pages.append(p.extract_text() or "")
-#             text = "\n\n".join(pages)
-
-#         # chunk it
-#         chunks = simple_chunk(text, chunk_size=800, overlap=120)
-#         metas = [{"source": uploaded.name, "path": f"uploaded://{uploaded.name}"} for _ in chunks]
-
-#         # add to vector store
-#         add_texts(chunks, metas)
-
-#         st.sidebar.success(f"Ingested {len(chunks)} chunks from {uploaded.name}")
-#         st.sidebar.write(f"Index size: **{index_count()}** chunks")
-
-#     except Exception as e:
-#         st.sidebar.error(f"Ingest failed: {e}")
-
-# st.sidebar.markdown("---")
-# col1, col2 = st.sidebar.columns(2)
-# with col1:
-#     if st.button("Show index size"):
-#         st.sidebar.info(f"Current chunks: **{index_count()}**")
-# with col2:
-#     if st.button("Reset index (danger)"):
-#         reset_index()
-#         st.sidebar.warning("Index cleared. Re-ingest files to use the bot.")
-# ========= Upload & Index Controls =========
-import io, os
-from pathlib import Path
-from typing import List
-from pypdf import PdfReader
-from src.core.vectordb import (
-    add_document_text, index_count, reset_index, index_summary
-)
+# ========== Upload & Index Controls ==========
 
 st.sidebar.markdown("### Upload & Ingest")
-
-# A) Single-file upload (txt/pdf)
-uploaded = st.sidebar.file_uploader(
-    "Drop a .txt or .pdf file",
-    type=["txt", "pdf"],
-    accept_multiple_files=False
-)
 
 def _read_file_bytes_to_text(uploaded_file) -> str:
     """Return full plain text for txt/pdf uploads."""
     if uploaded_file.type == "text/plain" or uploaded_file.name.lower().endswith(".txt"):
         return uploaded_file.read().decode("utf-8", errors="ignore")
-    # PDF
     pdf = PdfReader(io.BytesIO(uploaded_file.read()))
     pages = [p.extract_text() or "" for p in pdf.pages]
     return "\n\n".join(pages)
+
+# A) Single-file upload
+uploaded = st.sidebar.file_uploader(
+    "Drop a .txt or .pdf file",
+    type=["txt", "pdf"],
+    accept_multiple_files=False,
+)
 
 if uploaded:
     try:
@@ -195,12 +148,12 @@ if uploaded:
     except Exception as e:
         st.sidebar.error(f"Ingest failed: {e}")
 
-# B) Multi-file upload (ingest several at once)
+# B) Multi-file upload
 st.sidebar.markdown("#### Multi-file upload")
 multi_files: List = st.sidebar.file_uploader(
     "Select multiple .txt/.pdf files",
     type=["txt", "pdf"],
-    accept_multiple_files=True
+    accept_multiple_files=True,
 )
 if multi_files:
     total = 0
@@ -218,7 +171,7 @@ if multi_files:
 
 st.sidebar.markdown("---")
 
-# C) Rebuild index from folder (data/raw)
+# C) Rebuild index from data/raw
 st.sidebar.markdown("#### Rebuild from folder")
 data_dir = Path("data/raw")
 st.sidebar.caption(f"Folder: `{data_dir.as_posix()}`")
@@ -242,7 +195,7 @@ if st.sidebar.button("Rebuild index from data/raw (danger)"):
 
 st.sidebar.markdown("---")
 
-# D) Show what's indexed (summary)
+# D) Show what's indexed
 if st.sidebar.button("Show indexed files"):
     summ = index_summary()
     st.sidebar.write(f"**Total chunks:** {summ['total_chunks']}")
