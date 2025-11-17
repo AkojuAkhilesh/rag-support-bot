@@ -2,49 +2,38 @@
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]  # -> project root
+ROOT = Path(__file__).resolve().parents[1]  # -> C:\Users\dell\rag-support-bot
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))  # so 'src' is importable
 
 from src.core.history import load_history, append_message, clear_history, export_path
+from src.core.rag import answer_query   # <<< NEW: use RAG directly
 
-# streamlit_app.py
-import requests
 import streamlit as st
+import requests  # still used for optional health checks if you want
 import os
-from typing import List
+from pathlib import Path
 import io
+from typing import List
 from pypdf import PdfReader
 from src.core.vectordb import (
     add_document_text, index_count, reset_index, index_summary
 )
 
-API_URL = os.getenv("API_URL", "http://localhost:8000/chat")  # FastAPI endpoint
+# If you still want to keep API_URL for debugging / future use:
+API_URL = os.getenv("API_URL", "http://localhost:8000/chat")
 
-st.set_page_config(
-    page_title="RAG Support Bot (Gemini)",
-    page_icon="🤖",
-    layout="centered",
-)
+st.set_page_config(page_title="RAG Support Bot (Gemini)", page_icon="🤖", layout="centered")
 st.title("🤖 RAG Support Bot (Gemini)")
 st.caption("Ask questions about your ingested docs. (faq.txt for now)")
 
-# ---------- Sidebar status / health ----------
+# Small status line
 index_exists = Path(".miniindex.pkl").exists()
 st.sidebar.header("Status")
-st.sidebar.write("Index file (local UI container):",
-                 "✅ found" if index_exists else "❌ missing (.miniindex.pkl)")
-st.sidebar.write("API endpoint:", API_URL)
+st.sidebar.write("Index file:", "✅ found" if index_exists else "❌ missing (.miniindex.pkl)")
+st.sidebar.write("API endpoint (unused by UI for answers now):", API_URL)
 
-# Show API health
-health_url = API_URL.replace("/chat", "/health")
-try:
-    h = requests.get(health_url, timeout=10)
-    st.sidebar.success(f"API health OK: {h.status_code} {h.text}")
-except Exception as e:
-    st.sidebar.error(f"API health failed: {e}")
-
-# ---------- Chat history (persisted locally) ----------
+# Chat history in session (persisted)
 if "messages" not in st.session_state:
     stored = load_history()
     st.session_state.messages = [
@@ -64,7 +53,7 @@ for m in st.session_state.messages:
                         f"`{c.get('path')}`  \n(score: {c.get('score')})"
                     )
 
-# ---------- Chat input ----------
+# Input box (sticky at bottom)
 prompt = st.chat_input("Type your question…")
 
 if prompt:
@@ -72,22 +61,18 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    append_message("user", prompt)  # persist user message
+    # persist user message to disk
+    append_message("user", prompt)
 
-    # call the API
+    # call the local RAG pipeline directly (NO HTTP)
     with st.chat_message("assistant"):
         with st.spinner("Thinking…"):
             try:
-                resp = requests.post(API_URL, json={"query": prompt, "top_k": 4}, timeout=90)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    answer = data.get("answer", "No answer.")
-                    citations = data.get("citations", [])
-                else:
-                    answer = f"Server error: HTTP {resp.status_code}"
-                    citations = []
+                result = answer_query(prompt, top_k=4)
+                answer = result.get("answer", "No answer.")
+                citations = result.get("citations", [])
             except Exception as e:
-                answer = f"Request failed: {e}"
+                answer = f"Error running RAG: {e}"
                 citations = []
 
             st.markdown(answer)
@@ -99,12 +84,17 @@ if prompt:
                             f"`{c.get('path')}`  \n(score: {c.get('score')})"
                         )
 
+            # persist assistant message
             st.session_state.messages.append(
-                {"role": "assistant", "content": answer, "citations": citations}
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "citations": citations,
+                }
             )
             append_message("assistant", answer, citations)
 
-# ---------- Conversation history controls ----------
+# Sidebar controls – history
 st.sidebar.markdown("---")
 with st.sidebar.expander("Conversation history"):
     try:
@@ -120,7 +110,7 @@ with st.sidebar.expander("Conversation history"):
         st.sidebar.warning("History cleared.")
         st.rerun()
 
-# ========== Upload & Index Controls ==========
+# ========= Upload & Index Controls =========
 
 st.sidebar.markdown("### Upload & Ingest")
 
@@ -155,13 +145,14 @@ multi_files: List = st.sidebar.file_uploader(
     type=["txt", "pdf"],
     accept_multiple_files=True,
 )
+
 if multi_files:
     total = 0
     prog = st.sidebar.progress(0.0, text="Ingesting…")
     for i, uf in enumerate(multi_files, 1):
         try:
             text = _read_file_bytes_to_text(uf)
-            total += add_document_text(uf.name, text)
+            total += add_document_text(uf.name, text, chunk_size=800, overlap=120)
         except Exception as e:
             st.sidebar.error(f"{uf.name}: {e}")
         prog.progress(i / max(len(multi_files), 1))
@@ -171,7 +162,7 @@ if multi_files:
 
 st.sidebar.markdown("---")
 
-# C) Rebuild index from data/raw
+# C) Rebuild index from folder (data/raw)
 st.sidebar.markdown("#### Rebuild from folder")
 data_dir = Path("data/raw")
 st.sidebar.caption(f"Folder: `{data_dir.as_posix()}`")
@@ -187,7 +178,7 @@ if st.sidebar.button("Rebuild index from data/raw (danger)"):
                 pdf = PdfReader(p.open("rb"))
                 pages = [pg.extract_text() or "" for pg in pdf.pages]
                 text = "\n\n".join(pages)
-            added += add_document_text(p.name, text)
+            added += add_document_text(p.name, text, chunk_size=800, overlap=120)
         st.sidebar.success(f"Rebuilt index: {added} chunks from {len(files)} file(s).")
         st.sidebar.write(f"Index size: **{index_count()}** chunks")
     except Exception as e:
